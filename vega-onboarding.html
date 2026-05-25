@@ -89,7 +89,7 @@ async function next(){
     await new Promise(r=>setTimeout(r,1400));
     S.loading=false;
   }
-  if(S.step===4){window.location.href='/vega-imovel.html';return;}
+  if(S.step===4){window.location.href='vega-imovel.html';return;}
   if(S.step<4)goTo(S.step+1);
 }
 function back(){if(S.step>1)goTo(S.step-1)}
