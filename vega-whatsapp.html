@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>WhatsApp</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#ECE5DD;height:100vh;display:flex;flex-direction:column;max-width:430px;margin:0 auto;position:relative;overflow:hidden}
+
+  /* Status bar */
+  .status-bar{background:#075E54;padding:6px 16px 4px;display:flex;align-items:center;justify-content:space-between}
+  .status-time{font-size:12px;font-weight:600;color:#fff}
+  .status-icons{display:flex;align-items:center;gap:6px}
+  .status-icons svg{fill:#fff}
+
+  /* Header WhatsApp */
+  .wa-header{background:#075E54;padding:8px 12px 10px;display:flex;align-items:center;gap:10px;box-shadow:0 1px 3px rgba(0,0,0,0.2)}
+  .wa-back{color:#fff;font-size:22px;cursor:pointer;padding:4px;line-height:1}
+  .wa-avatar{width:38px;height:38px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:700;color:#fff;flex-shrink:0}
+  .wa-info{flex:1;min-width:0}
+  .wa-name{font-size:15px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wa-status{font-size:12px;color:rgba(255,255,255,0.75);margin-top:1px}
+  .wa-actions{display:flex;gap:18px}
+  .wa-actions svg{width:22px;height:22px;fill:#fff;opacity:0.9}
+
+  /* Chat background */
+  .chat-bg{flex:1;overflow-y:auto;padding:10px 10px 80px;background:#ECE5DD;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' opacity='0.04'%3E%3Ctext y='60' font-size='60'%3E💬%3C/text%3E%3C/svg%3E")}
+
+  /* Date pill */
+  .date-pill{text-align:center;margin:12px 0 8px}
+  .date-pill span{background:rgba(255,255,255,0.85);color:#666;font-size:11.5px;font-weight:500;padding:4px 12px;border-radius:999px;box-shadow:0 1px 2px rgba(0,0,0,0.08)}
+
+  /* Bubble */
+  .bubble-wrap{display:flex;flex-direction:column;align-items:flex-start;margin-bottom:4px;max-width:82%}
+  .bubble{background:#fff;border-radius:0 10px 10px 10px;padding:8px 10px 6px;box-shadow:0 1px 2px rgba(0,0,0,0.12);position:relative}
+  .bubble::before{content:'';position:absolute;top:0;left:-8px;width:0;height:0;border-top:8px solid #fff;border-left:8px solid transparent}
+  .bubble-text{font-size:14px;color:#111;line-height:1.55}
+  .bubble-meta{display:flex;align-items:center;justify-content:flex-end;gap:4px;margin-top:3px}
+  .bubble-time{font-size:11px;color:#999}
+  .bubble-check{display:flex;align-items:center}
+  .bubble-check svg{width:16px;height:16px}
+
+  /* Link card inside bubble */
+  .link-card{margin-top:8px;border-radius:8px;overflow:hidden;border:1px solid #E8E8E8;cursor:pointer;transition:opacity .15s}
+  .link-card:hover{opacity:0.88}
+  .link-card:active{opacity:0.75}
+  .link-card-img{width:100%;height:110px;background:linear-gradient(135deg,#013731 0%,#025a4a 50%,#1B6B3A 100%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;position:relative;overflow:hidden}
+  .link-card-img::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200' opacity='0.06'%3E%3Ccircle cx='100' cy='100' r='80' fill='%23ffffff'/%3E%3Ccircle cx='100' cy='100' r='55' fill='%23ffffff'/%3E%3C/svg%3E") center/cover}
+  .link-logo{width:44px;height:44px;background:rgba(255,255,255,0.12);border-radius:12px;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.2);backdrop-filter:blur(4px)}
+  .link-logo svg{width:28px;height:28px}
+  .link-card-body{padding:8px 10px 6px;background:#fff}
+  .link-domain{font-size:11px;color:#25D366;font-weight:600;margin-bottom:2px;text-transform:uppercase;letter-spacing:.3px}
+  .link-title{font-size:13px;font-weight:700;color:#111;line-height:1.3}
+  .link-desc{font-size:12px;color:#666;margin-top:2px;line-height:1.4}
+
+  /* Audio bubble */
+  .audio-bubble{display:flex;align-items:center;gap:8px;padding:6px 10px;min-width:200px}
+  .audio-play{width:36px;height:36px;border-radius:50%;background:#075E54;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer}
+  .audio-play svg{width:16px;height:16px;fill:#fff;margin-left:2px}
+  .audio-wave{flex:1;height:28px;display:flex;align-items:center;gap:2px}
+  .audio-wave span{display:inline-block;border-radius:2px;background:#ccc;width:3px}
+  .audio-wave span:nth-child(1){height:8px}
+  .audio-wave span:nth-child(2){height:16px}
+  .audio-wave span:nth-child(3){height:22px}
+  .audio-wave span:nth-child(4){height:14px}
+  .audio-wave span:nth-child(5){height:20px}
+  .audio-wave span:nth-child(6){height:10px}
+  .audio-wave span:nth-child(7){height:18px}
+  .audio-wave span:nth-child(8){height:24px}
+  .audio-wave span:nth-child(9){height:12px}
+  .audio-wave span:nth-child(10){height:16px}
+  .audio-wave span:nth-child(11){height:8px}
+  .audio-wave span:nth-child(12){height:20px}
+  .audio-wave span:nth-child(13){height:14px}
+  .audio-wave span:nth-child(14){height:10px}
+  .audio-wave span:nth-child(15){height:18px}
+  .audio-dur{font-size:12px;color:#999;white-space:nowrap}
+  .audio-avatar{width:34px;height:34px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}
+
+  /* Input bar */
+  .input-bar{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;padding:8px 10px;background:transparent;display:flex;align-items:center;gap:8px}
+  .input-field{flex:1;background:#fff;border-radius:24px;padding:10px 16px;font-size:14px;color:#333;display:flex;align-items:center;gap:8px;box-shadow:0 1px 2px rgba(0,0,0,0.1)}
+  .input-field span{flex:1;color:#999;font-size:14px}
+  .input-field svg{width:22px;height:22px;fill:#999}
+  .mic-btn{width:48px;height:48px;border-radius:50%;background:#25D366;display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 2px 6px rgba(0,0,0,0.2)}
+  .mic-btn svg{width:22px;height:22px;fill:#fff}
+
+  /* Tap to open */
+  .tap-hint{text-align:center;font-size:11.5px;color:#888;margin-top:4px;padding:0 8px}
+</style>
+</head>
+<body>
+
+<!-- Status bar -->
+<div class="status-bar">
+  <span class="status-time">9:41</span>
+  <div class="status-icons">
+    <svg width="16" height="12" viewBox="0 0 16 12"><rect x="0" y="3" width="3" height="9" rx="1"/><rect x="4.5" y="2" width="3" height="10" rx="1"/><rect x="9" y="0" width="3" height="12" rx="1"/><rect x="13.5" y="0" width="2.5" height="12" rx="1" opacity=".3"/></svg>
+    <svg width="16" height="12" viewBox="0 0 24 24"><path d="M1 6s4.5-5 11-5 11 5 11 5M5 10s3-3.5 7-3.5S19 10 19 10M9 14s1.5-2 3-2 3 2 3 2M11.5 18h1" stroke="#fff" stroke-width="2" stroke-linecap="round" fill="none"/></svg>
+    <svg width="26" height="12" viewBox="0 0 26 12"><rect x="0" y="2" width="23" height="8" rx="2" stroke="#fff" stroke-width="1.5" fill="none"/><rect x="23.5" y="4" width="2" height="4" rx="1" fill="#fff" opacity=".5"/><rect x="1.5" y="3.5" width="16" height="5" rx="1" fill="#fff"/></svg>
+  </div>
+</div>
+
+<!-- WhatsApp Header -->
+<div class="wa-header">
+  <div class="wa-back">‹</div>
+  <div class="wa-avatar">O</div>
+  <div class="wa-info">
+    <div class="wa-name">OCEPAR Paraná Cooperativo</div>
+    <div class="wa-status">online</div>
+  </div>
+  <div class="wa-actions">
+    <svg viewBox="0 0 24 24" width="22" height="22"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12 19.79 19.79 0 0 1 1.61 3.42 2 2 0 0 1 3.6 1.25h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.91a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" stroke="#fff" stroke-width="2" fill="none"/></svg>
+    <svg viewBox="0 0 24 24" width="22" height="22"><circle cx="12" cy="5" r="1" fill="#fff"/><circle cx="12" cy="12" r="1" fill="#fff"/><circle cx="12" cy="19" r="1" fill="#fff"/></svg>
+  </div>
+</div>
+
+<!-- Chat -->
+<div class="chat-bg">
+  <div class="date-pill"><span>Hoje</span></div>
+
+  <!-- Mensagem 1 — texto -->
+  <div class="bubble-wrap">
+    <div class="bubble">
+      <div class="bubble-text">Olá, Alexandre! 👋<br>Aqui é da equipe da <b>OCEPAR — Paraná Cooperativo</b>.</div>
+      <div class="bubble-meta">
+        <span class="bubble-time">9:32</span>
+        <div class="bubble-check"><svg viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L10 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L15 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensagem 2 -->
+  <div class="bubble-wrap" style="margin-top:2px">
+    <div class="bubble">
+      <div class="bubble-text">Temos uma novidade exclusiva para você como produtor rural associado à nossa cooperativa. 🌱</div>
+      <div class="bubble-meta">
+        <span class="bubble-time">9:32</span>
+        <div class="bubble-check"><svg viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L10 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L15 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensagem 3 -->
+  <div class="bubble-wrap" style="margin-top:2px">
+    <div class="bubble">
+      <div class="bubble-text">Estamos lançando o <b>Programa de Conformidade Socioambiental</b>, que vai te ajudar a verificar e regularizar a situação do seu imóvel rural — e abrir portas para novos mercados e financiamentos. 🌿</div>
+      <div class="bubble-meta">
+        <span class="bubble-time">9:33</span>
+        <div class="bubble-check"><svg viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L10 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L15 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensagem 4 — áudio -->
+  <div class="bubble-wrap" style="margin-top:2px">
+    <div class="bubble" style="padding:6px 8px 6px">
+      <div class="audio-bubble">
+        <div class="audio-play">
+          <svg viewBox="0 0 24 24"><polygon points="5,3 19,12 5,21"/></svg>
+        </div>
+        <div class="audio-wave">
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+          <span></span><span></span><span></span><span></span><span></span>
+        </div>
+        <span class="audio-dur">0:42</span>
+        <div class="audio-avatar">O</div>
+      </div>
+      <div class="bubble-meta">
+        <span class="bubble-time">9:35</span>
+        <div class="bubble-check"><svg viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L10 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L15 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mensagem 5 — link card -->
+  <div class="bubble-wrap" style="margin-top:2px">
+    <div class="bubble" style="padding:8px 8px 6px;min-width:240px">
+      <div class="bubble-text" style="margin-bottom:8px">Clique no link abaixo para fazer seu cadastro e participar do programa. É rápido e gratuito! ✅</div>
+      <div class="link-card" onclick="window.location.href='vega-onboarding.html'">
+        <div class="link-card-img">
+          <!-- Logo VEGA simplificada -->
+          <div class="link-logo">
+            <svg viewBox="0 0 48 48" width="28" height="28">
+              <defs>
+                <linearGradient id="g1" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#2C9B5C"/><stop offset="1" stop-color="#7BD18C"/></linearGradient>
+                <linearGradient id="g2" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#8FCB3B"/><stop offset="1" stop-color="#E5EE5C"/></linearGradient>
+              </defs>
+              <path d="M24 44 C 8 38, 6 18, 14 6 C 18 14, 22 22, 24 44 Z" fill="url(#g1)"/>
+              <path d="M24 44 C 38 34, 40 14, 32 4 C 28 14, 25 24, 24 44 Z" fill="url(#g2)"/>
+            </svg>
+          </div>
+          <div style="color:rgba(255,255,255,0.9);font-size:12px;font-weight:600;letter-spacing:.3px">Programa Socioambiental</div>
+        </div>
+        <div class="link-card-body">
+          <div class="link-domain">ocepar.programa.coop.br</div>
+          <div class="link-title">Cadastro do Produtor Rural</div>
+          <div class="link-desc">Acesse a plataforma e verifique a situação socioambiental do seu imóvel.</div>
+        </div>
+      </div>
+      <div class="tap-hint">Toque para acessar o programa</div>
+      <div class="bubble-meta" style="margin-top:6px">
+        <span class="bubble-time">9:36</span>
+        <div class="bubble-check"><svg viewBox="0 0 16 11" fill="none"><path d="M1 5.5L5 9.5L10 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 5.5L10 9.5L15 1" stroke="#53BDEB" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Input bar -->
+<div class="input-bar">
+  <div class="input-field">
+    <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="#999" stroke-width="1.5"/><path d="M8 14s1.5 2 4 2 4-2 4-2" stroke="#999" stroke-width="1.5" stroke-linecap="round"/><path d="M9 9h.01M15 9h.01" stroke="#999" stroke-width="2" stroke-linecap="round"/></svg>
+    <span>Mensagem</span>
+    <svg viewBox="0 0 24 24" fill="none"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66L9.41 17.41A2 2 0 0 1 6.59 14.59L15.8 5.39" stroke="#999" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div class="mic-btn">
+    <svg viewBox="0 0 24 24" fill="none"><rect x="9" y="2" width="6" height="11" rx="3" fill="#fff"/><path d="M5 10a7 7 0 0 0 14 0M12 19v3M8 22h8" stroke="#075E54" stroke-width="2" stroke-linecap="round"/></svg>
+  </div>
+</div>
+
+</body>
+</html>
