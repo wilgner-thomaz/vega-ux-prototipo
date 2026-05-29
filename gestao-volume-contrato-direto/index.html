@@ -1,0 +1,1563 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=1280">
+<title>Gerenciar Volume — Grain Station</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+<script src="vega-ds.js"></script>
+<style>
+* { font-family: 'Roboto', sans-serif; box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #fff; min-width: 1280px; min-height: 720px; overflow-x: auto; }
+
+/* Lucide icons */
+i[data-lucide] { display:inline-flex; flex-shrink:0; }
+
+/* Sidebar transition */
+#sidebar { transition: width 0.25s ease; }
+#toggle-btn { transition: left 0.25s ease; }
+#main-content { transition: margin-left 0.25s ease; }
+
+/* Range input — DS Grain Station */
+input[type=range] {
+  -webkit-appearance: none; appearance: none;
+  width: 100%; height: 5px;
+  border-radius: 4px; outline: none; cursor: pointer;
+  background: #e0e0e0; /* fallback; JS will set gradient */
+}
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px; border-radius: 50%;
+  background: white;
+  border: 2px solid #bdbdbd;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.18);
+  margin-top: -5px; /* centraliza thumb (15px) sobre track (5px): (5-15)/2 */
+  position: relative; z-index: 1;
+}
+input[type=range]::-webkit-slider-runnable-track { height: 5px; border-radius: 4px; }
+input[type=range]:disabled { cursor: not-allowed; opacity: 0.5; }
+input[type=range]:disabled::-webkit-slider-thumb { cursor: not-allowed; }
+
+/* Number input */
+input[type=number] { -moz-appearance: textfield; }
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #f5f5f5; }
+::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+/* Tooltip no botão desabilitado */
+.btn-tooltip-wrap { position: relative; display: inline-flex; }
+.btn-tooltip-wrap .tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 0;
+  background: #1e4841;
+  color: white;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 6px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.18);
+  pointer-events: none;
+  z-index: 50;
+}
+.btn-tooltip-wrap .tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%; right: 16px;
+  border: 6px solid transparent;
+  border-top-color: #1e4841;
+}
+.btn-tooltip-wrap.has-tooltip:hover .tooltip { display: block; }
+
+/* Tooltip no controle de volume desabilitado */
+.vol-wrap { position: relative; overflow: visible !important; }
+.vol-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 10px);
+  left: 50%; transform: translateX(-50%);
+  background: #1e4841;
+  color: white;
+  font-size: 12px; line-height: 1.5;
+  padding: 10px 12px;
+  border-radius: 6px;
+  width: 210px;
+  box-shadow: 0 4px 14px rgba(0,0,0,0.22);
+  pointer-events: none;
+  z-index: 60;
+  text-align: left;
+}
+.vol-tooltip b { display: block; font-size: 11px; font-weight: 600;
+                 color: #d4d92e; margin-bottom: 5px; text-transform: uppercase;
+                 letter-spacing: 0.04px; }
+.vol-tooltip::after {
+  content: '';
+  position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: #1e4841;
+}
+.vol-wrap.vol-disabled:hover .vol-tooltip { display: block; }
+
+/* ── Drawer / Side Panel ───────────────────────────────────────── */
+#car-drawer-overlay {
+  display: none;
+  position: fixed; inset: 0; z-index: 300;
+  background: rgba(0,0,0,0.4);
+}
+#car-drawer-overlay.open { display: block; }
+
+#car-drawer {
+  position: fixed; top: 74px; right: 0; bottom: 74px;
+  width: 1020px; max-width: 94vw;
+  background: white;
+  display: flex; flex-direction: column;
+  box-shadow: -4px 0 40px rgba(0,0,0,0.18);
+  transform: translateX(100%);
+  transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
+  z-index: 301;
+  border-radius: 16px 0 0 16px;
+  overflow: hidden;
+}
+#car-drawer.open { transform: translateX(0); }
+
+/* Leaflet container inside drawer */
+#car-map { width: 100%; height: 100%; }
+.leaflet-container { font-family: 'Roboto', sans-serif; }
+
+
+/* DS TextField — variante web (40px) */
+.tf-wrap.tf-sm {
+  height: 40px;
+  padding: 0 12px;
+}
+.tf-wrap.tf-sm .tf-label {
+  font-size: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+.tf-wrap.tf-sm:focus-within .tf-label,
+.tf-wrap.tf-sm.tf-filled .tf-label {
+  top: 5px;
+  transform: translateY(0);
+  font-size: 10px;
+  font-weight: 600;
+}
+.tf-wrap.tf-sm:focus-within .tf-input,
+.tf-wrap.tf-sm.tf-filled .tf-input {
+  padding-top: 14px;
+}
+</style>
+</head>
+<body style="display:flex; height:100vh; overflow:hidden;">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════════════════════════ -->
+<div id="sidebar" style="width:56px; min-width:56px; background:#00413c; display:flex; flex-direction:column; position:fixed; top:0; left:0; height:100%; z-index:50; padding-top:32px; padding-bottom:8px; overflow:hidden;">
+
+  <!-- Logo -->
+  <div style="height:53px; display:flex; align-items:center; justify-content:center; padding-left:3px; margin-bottom:12px; flex-shrink:0;">
+    <img id="logo-closed" src="logo-fechada.svg" style="width:50px; height:49px; object-fit:contain;" alt="GS">
+    <img id="logo-open" src="logo-aberta.svg" style="height:38px; max-width:180px; object-fit:contain; display:none;" alt="Grain Station">
+  </div>
+
+  <!-- Divider below logo -->
+  <div id="logo-divider" style="padding-left:16px; margin-bottom:24px; flex-shrink:0;">
+    <div style="height:1px; background:rgba(255,255,255,0.2); width:24px; transition:width 0.25s;"></div>
+  </div>
+
+  <!-- Menu items -->
+  <div style="display:flex; flex-direction:column; gap:12px; flex:1; overflow-y:auto; overflow-x:hidden;">
+
+    <!-- Início -->
+    <div class="menu-item" data-item="inicio" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="layout-grid" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Início</span>
+    </div>
+
+    <!-- Clientes -->
+    <div class="menu-item" data-item="clientes" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="users" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Clientes</span>
+    </div>
+
+    <!-- Imóveis rurais -->
+    <div class="menu-item" data-item="imoveis" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="house" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Imóveis rurais</span>
+    </div>
+
+    <!-- SIG -->
+    <div class="menu-item" data-item="sig" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="globe" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">SIG</span>
+    </div>
+
+    <!-- Diagnóstico Socioambiental -->
+    <div class="menu-item" data-item="diag" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="scan-search" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Diag. Socioambiental</span>
+    </div>
+
+    <!-- Laudos -->
+    <div class="menu-item" data-item="laudos" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="file-text" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Laudos</span>
+    </div>
+
+    <!-- Mon. Socioambiental -->
+    <div class="menu-item" data-item="mon-socio" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="leaf" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Mon. Socioambiental</span>
+    </div>
+
+    <!-- Mon. Agrícola -->
+    <div class="menu-item" data-item="mon-agri" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="sprout" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Mon. Agrícola</span>
+    </div>
+
+    <!-- Operações Financeiras -->
+    <div class="menu-item" data-item="operacoes" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="circle-dollar-sign" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Op. Financeiras</span>
+    </div>
+
+    <!-- Inteligência Comercial -->
+    <div class="menu-item" data-item="intel-com" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="flame" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Intel. Comercial</span>
+    </div>
+
+    <!-- Inteligência -->
+    <div class="menu-item" data-item="intel" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="layers" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Inteligência</span>
+    </div>
+
+    <!-- Contratos (ACTIVE) -->
+    <div class="menu-item menu-item-active" data-item="contratos" style="display:flex;align-items:center;cursor:pointer;position:relative;height:28px;">
+      <div style="position:absolute;left:0;top:50%;transform:translateY(-50%);width:7px;height:25px;background:#d4d92e;border-radius:0 4px 4px 0;"></div>
+      <div style="padding-left:14px;display:flex;align-items:center;">
+        <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i data-lucide="file-check" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+        </div>
+        <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;font-weight:500;white-space:nowrap;">Contratos</span>
+      </div>
+    </div>
+
+    <!-- Certificações -->
+    <div class="menu-item" data-item="cert" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="award" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">Certificações</span>
+    </div>
+
+    <!-- MMRV -->
+    <div class="menu-item" data-item="mmrv" style="display:flex;align-items:center;padding-left:14px;cursor:pointer;position:relative;height:28px;">
+      <div style="width:28px;height:28px;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+        <i data-lucide="chart-line" style="width:22px;height:22px;stroke:white;stroke-width:1.5;"></i>
+      </div>
+      <span class="menu-label" style="display:none;margin-left:16px;font-size:14px;color:white;white-space:nowrap;">MMRV</span>
+    </div>
+
+  </div>
+</div>
+
+<!-- Toggle button (fixed, outside sidebar) -->
+<button id="toggle-btn" onclick="toggleSidebar()"
+  style="position:fixed; top:86px; left:46px; width:20px; height:20px; background:#d4d92e; border:none; border-radius:0 6px 6px 0; cursor:pointer; z-index:100; box-shadow:0 1px 4px 2px rgba(0,0,0,0.16); display:flex; align-items:center; justify-content:center; padding:0;">
+  <i id="arrow-open" data-lucide="chevron-right" style="width:14px;height:14px;stroke:#00413c;stroke-width:2.2;display:inline-flex;flex-shrink:0;"></i>
+  <i id="arrow-close" data-lucide="chevron-left" style="display:none;width:14px;height:14px;stroke:#00413c;stroke-width:2.2;flex-shrink:0;"></i>
+</button>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MAIN CONTENT
+════════════════════════════════════════════════════════════════ -->
+<div id="main-content" style="margin-left:56px; min-height:100vh; background:#fff; display:flex; flex-direction:column; flex:1;">
+
+  <!-- HEADER -->
+  <div style="padding:16px 24px 0 24px; flex-shrink:0;">
+    <div style="display:flex; align-items:flex-start; justify-content:space-between;">
+      <!-- Title + breadcrumbs -->
+      <div>
+        <h1 style="font-size:24px; font-weight:600; color:#1e4841; line-height:1.2;">Gestão de contratos</h1>
+        <div style="display:flex; align-items:center; gap:8px; padding-left:8px; margin-top:2px;">
+          <span style="font-size:14px; color:#9e9e9e; line-height:16px;">Início</span>
+          <i data-lucide="chevron-right" style="width:14px;height:14px;stroke:#9e9e9e;stroke-width:1.6;flex-shrink:0;"></i>
+          <span style="font-size:14px; color:#9e9e9e; line-height:16px;">Gestão de contratos</span>
+          <i data-lucide="chevron-right" style="width:14px;height:14px;stroke:#9e9e9e;stroke-width:1.6;flex-shrink:0;"></i>
+          <span style="font-size:14px; font-weight:500; color:#336763; line-height:18px; letter-spacing:0.014px;">Novo contrato de compra - Direto</span>
+        </div>
+      </div>
+      <!-- Right: search + actions -->
+      <div style="display:flex; align-items:center; gap:48px;">
+        <div style="display:flex; align-items:center; gap:8px;">
+          <!-- Search -->
+          <div style="background:#eff0f0; border:1px solid #eff0f0; border-radius:8px; padding:10px 16px; width:328px; display:flex; align-items:center; gap:6px; cursor:text;">
+            <span style="flex:1; font-size:14px; color:#6b7271; line-height:1.3;">O que deseja buscar no Grain Station?</span>
+            <i data-lucide="search" style="width:18px;height:18px;stroke:#6b7271;stroke-width:1.5;flex-shrink:0;"></i>
+          </div>
+          <!-- Filter -->
+          <div style="width:38px; height:38px; border:1px solid #e0e0e0; border-radius:8px; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+            <i data-lucide="sliders-horizontal" style="width:18px;height:18px;stroke:#454545;stroke-width:1.5;flex-shrink:0;"></i>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:16px;">
+          <!-- PT-BR -->
+          <div style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+            <span style="font-size:16px; font-weight:600; color:#00413c; line-height:16px;">PT-BR</span>
+            <i data-lucide="chevron-down" style="width:18px;height:18px;stroke:#00413c;stroke-width:1.5;flex-shrink:0;"></i>
+          </div>
+          <!-- Bell + badge -->
+          <div style="position:relative; width:32px; height:32px; cursor:pointer;">
+            <div style="width:32px; height:32px; background:#f5f5f5; border-radius:50%; display:flex; align-items:center; justify-content:center;">
+              <i data-lucide="bell" style="width:18px;height:18px;stroke:#454545;stroke-width:1.5;flex-shrink:0;"></i>
+            </div>
+            <div style="position:absolute; top:-3px; right:-3px; background:#dc362e; color:white; font-size:10px; min-width:18px; height:18px; border-radius:10px; display:flex; align-items:center; justify-content:center; border:1px solid white; padding:0 3px;">5</div>
+          </div>
+          <!-- Settings -->
+          <div style="width:32px; height:32px; background:#f5f5f5; border-radius:50%; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+            <i data-lucide="settings" style="width:18px;height:18px;stroke:#454545;stroke-width:1.5;flex-shrink:0;"></i>
+          </div>
+          <!-- Avatar -->
+          <div style="width:36px; height:36px; border-radius:12px; background:#c8dac8; display:flex; align-items:center; justify-content:center; cursor:pointer; overflow:hidden;">
+            <i data-lucide="user" style="width:20px;height:20px;stroke:#00413c;stroke-width:1.5;flex-shrink:0;"></i>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="height:1px; background:#e0e0e0; margin-top:16px;"></div>
+  </div>
+
+  <!-- PAGE CONTENT (scrollable) -->
+  <div style="flex:1; overflow-y:auto; padding:16px 24px;">
+    <div id="page-content" style="display:flex; flex-direction:column; gap:16px;"></div>
+  </div>
+
+  <!-- ACTION BAR -->
+  <div style="padding:12px 24px; display:flex; justify-content:space-between; align-items:center; border-top:1px solid #f0f0f0; flex-shrink:0; background:#fff;">
+    <button onclick="goBack()" style="height:40px; padding:0 16px; background:transparent; border:none; cursor:pointer; font-size:14px; font-weight:500; color:#8aa8a5; font-family:Roboto;">Voltar</button>
+    <div style="display:flex; gap:16px; align-items:center;">
+      <button onclick="doSave()" style="height:40px; padding:0 16px; background:transparent; border:1px solid #00413c; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; color:#00413c; font-family:Roboto;">Salvar</button>
+      <div class="btn-tooltip-wrap">
+        <span class="tooltip" id="advance-tooltip">Complete o volume do contrato para avançar</span>
+        <button onclick="doAdvance()" id="btn-advance" style="height:40px; padding:0 20px; background:#d4d92e; border:none; border-radius:8px; cursor:pointer; font-size:14px; font-weight:500; color:#00413c; font-family:Roboto;">Avançar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     JAVASCRIPT
+════════════════════════════════════════════════════════════════ -->
+<script>
+// ─── STATE ────────────────────────────────────────────────────────
+// Base simulada de imóveis cadastrados
+const CAR_DB = {
+  'MT-5106273-12A28AD200454CD3B22825F2F338863C': {
+    name: 'Fazenda Alvorecer',
+    municipio: 'Sorriso - MT',
+    estado: 'MT',
+    produtor: 'Carla Zimão',
+    documento: '123.456.789-00'
+  },
+  'SP-3550308-AABBCCDD11223344AABBCCDD11223344': {
+    name: 'Sítio Boa Esperança',
+    municipio: 'São Paulo - SP',
+    estado: 'SP',
+    produtor: 'João Silva',
+    documento: '987.654.321-00'
+  }
+};
+
+let S = {
+  sidebarOpen: false,
+  contractTotal: 7000,
+  existingVolume: 0,
+  props: [
+    {
+      id: 3,
+      name: 'Sítio Boa Esperança',
+      code: 'BR-SP-1C2D3E',
+      car: 'MT-5107909-AABBCCDD11223344AABBCCDD11223344',
+      municipio: 'Sinop - MT',
+      produtor: 'João Silva',
+      status: 'ok',
+      acceptRestrictions: false,
+      justification: '',
+      criteria: {
+        distance:      { label: 'Distância do local de entrega', status: 'ok',      value: '87 km',           detail: 'Limite de: 150 Km',    hasLink: false },
+        socioambiental:{ label: 'Análise Socioambiental',        status: 'conforme', value: '0 alertas',       detail: null,                  hasLink: true  },
+        saldo:         { label: 'Saldo elegível',                 status: 'ok',      value: '2.800 t',         total:  'Saldo total: 2.800 t', max: 2800      }
+      },
+      volume: 0
+    },
+    {
+      id: 1,
+      name: 'Fazenda Alvorecer',
+      code: 'BR-MT-0A0B0C',
+      car: 'MT-5106273-12A28AD200454CD3B22825F2F338863C',
+      municipio: 'Sorriso - MT',
+      produtor: 'Carla Zimão',
+      status: 'restricted',
+      acceptRestrictions: false,
+      justification: '',
+      criteria: {
+        distance:      { label: 'Distância do local de entrega', status: 'ok',    value: '123 km',    detail: 'Limite de: 150 Km',    hasLink: false },
+        socioambiental:{ label: 'Análise Socioambiental',        status: 'alert', value: '2 alertas', detail: null,                  hasLink: true  },
+        saldo:         { label: 'Saldo elegível',                 status: 'ok',   value: '4.200 t',   total:  'Saldo total: 4.200 t', max: 4200      }
+      },
+      volume: 0
+    },
+    {
+      id: 4,
+      name: 'Fazenda Serra Verde',
+      code: 'BR-GO-4F5G6H',
+      car: 'MT-5105622-CCDDEE0011223344CCDDEE0011223344',
+      municipio: 'Lucas do Rio Verde - MT',
+      produtor: 'Ana Paula Mota',
+      status: 'ok',
+      acceptRestrictions: false,
+      justification: '',
+      criteria: {
+        distance:      { label: 'Distância do local de entrega', status: 'ok',      value: '112 km',    detail: 'Limite de: 150 Km',    hasLink: false },
+        socioambiental:{ label: 'Análise Socioambiental',        status: 'conforme', value: '0 alertas', detail: null,                  hasLink: true  },
+        saldo:         { label: 'Saldo elegível',                 status: 'ok',      value: '5.500 t',   total:  'Saldo total: 5.500 t', max: 5500      }
+      },
+      volume: 0
+    },
+    {
+      id: 2,
+      name: 'Fazenda Vista Bonita',
+      code: 'BR-MT-0A0B0C',
+      car: 'MT-5106273-12A28AD200454CD3B22825F2F338863C',
+      municipio: 'Sorriso - MT',
+      produtor: 'Carla Zimão',
+      status: 'restricted',
+      acceptRestrictions: false,
+      justification: '',
+      criteria: {
+        distance:      { label: 'Distância do local de entrega', status: 'ok',          value: '123 km', detail: 'Limite de: 150 Km',    hasLink: false },
+        socioambiental:{ label: 'Análise Socioambiental',        status: 'conforme',     value: '0 alertas', detail: null,               hasLink: true  },
+        saldo:         { label: 'Saldo elegível',                 status: 'insufficient', value: '0 t',   total:  'Saldo total: 4.200 t', max: 0         }
+      },
+      volume: 0
+    }
+  ]
+};
+
+// ─── COMPUTED ────────────────────────────────────────────────────
+function totalAdded() { return S.existingVolume + S.props.reduce((s, p) => s + p.volume, 0); }
+function remaining()  { return S.contractTotal - totalAdded(); }
+function pct()        { return Math.min(100, (totalAdded() / S.contractTotal) * 100); }
+function maxForProp(p) {
+  const others = S.props.filter(o => o.id !== p.id).reduce((s, o) => s + o.volume, 0);
+  return Math.max(0, Math.min(S.contractTotal - S.existingVolume - others, p.criteria.saldo.max));
+}
+function canInput(p) {
+  if (p.status === 'ok') return true;
+  return p.acceptRestrictions && p.criteria.saldo.max > 0;
+}
+function fmt(n) { return n.toLocaleString('pt-BR'); }
+
+// ─── ACTIONS ─────────────────────────────────────────────────────
+function toggleSidebar() {
+  S.sidebarOpen = !S.sidebarOpen;
+  const sb  = document.getElementById('sidebar');
+  const btn = document.getElementById('toggle-btn');
+  const mc  = document.getElementById('main-content');
+  const lc  = document.getElementById('logo-closed');
+  const lo  = document.getElementById('logo-open');
+  const div = document.querySelector('#logo-divider div');
+
+  if (S.sidebarOpen) {
+    sb.style.width = '216px'; sb.style.minWidth = '216px';
+    btn.style.left = '208px';
+    mc.style.marginLeft = '216px';
+    lc.style.display = 'none'; lo.style.display = 'block';
+    if (div) div.style.width = '184px';
+    document.getElementById('arrow-open').style.display  = 'none';
+    document.getElementById('arrow-close').style.display = 'flex';
+    document.querySelectorAll('.menu-label').forEach(el => el.style.display = 'inline');
+  } else {
+    sb.style.width = '56px'; sb.style.minWidth = '56px';
+    btn.style.left = '46px';
+    mc.style.marginLeft = '56px';
+    lc.style.display = 'block'; lo.style.display = 'none';
+    if (div) div.style.width = '24px';
+    document.getElementById('arrow-open').style.display  = 'flex';
+    document.getElementById('arrow-close').style.display = 'none';
+    document.querySelectorAll('.menu-label').forEach(el => el.style.display = 'none');
+  }
+}
+
+function adjustVol(id, delta) {
+  const p = S.props.find(x => x.id === id); if (!p) return;
+  p.volume = Math.max(0, Math.min(p.volume + delta, maxForProp(p)));
+  render();
+}
+function setVol(id, val) {
+  const p = S.props.find(x => x.id === id); if (!p) return;
+  p.volume = Math.max(0, Math.min(parseInt(val) || 0, maxForProp(p)));
+
+  // Atualiza o controle do imóvel editado
+  const fill = document.getElementById('fill-' + id);
+  const inp  = document.getElementById('vol-' + id);
+  const maxV = maxForProp(p);
+  if (fill) fill.style.width = fillPx(p.volume, p.criteria.saldo.max) + 'px';
+  if (inp)  inp.value = p.volume;
+  // Esconde a mensagem de limite assim que o usuário começa a preencher
+  const selfMsg = document.getElementById('limit-msg-' + id);
+  if (selfMsg) selfMsg.style.display = 'none';
+  const rangeEl = fill?.parentElement?.querySelector('input[type=range]');
+  if (rangeEl) rangeEl.value = p.volume;
+
+  // Sincroniza max, fill e mensagem de limite dos demais controles
+  S.props.filter(o => o.id !== id).forEach(other => {
+    const oMax   = maxForProp(other);
+    const oFill  = document.getElementById('fill-' + other.id);
+    const oInp   = document.getElementById('vol-' + other.id);
+    const oRange = oFill?.parentElement?.querySelector('input[type=range]');
+    const oMsg   = document.getElementById('limit-msg-' + other.id);
+    const oVal   = document.getElementById('limit-val-' + other.id);
+    if (oFill)  oFill.style.width = fillPx(other.volume, other.criteria.saldo.max) + 'px';
+    if (oInp)   oInp.max = oMax;
+    if (oRange) { oRange.max = Math.max(other.criteria.saldo.max, 1); oRange.value = other.volume; }
+    if (oMsg) {
+      const show = canInput(other) && oMax < other.criteria.saldo.max && other.volume === 0;
+      oMsg.style.display = show ? 'flex' : 'none';
+      if (oVal) oVal.textContent = fmt(oMax);
+    }
+  });
+
+  renderVolumeBar();
+}
+function clampInput(id) {
+  const p = S.props.find(x => x.id === id);
+  const el = document.getElementById('vol-' + id);
+  if (el && p) el.value = p.volume;
+}
+function renderVolumeBar() {
+  const tot = totalAdded();
+  const rem = remaining();
+  const p   = pct();
+  const bar  = document.getElementById('vol-bar-fill');
+  const stat = document.getElementById('vol-stat');
+  if (bar)  bar.style.width = p + '%';
+  updateAdvanceBtn();
+  if (stat) stat.innerHTML = `
+    <div style="display:flex; align-items:baseline; gap:0; flex-wrap:wrap;">
+      <span style="font-size:20px; font-weight:500; color:#3d9442; line-height:24px;">${fmt(tot)} t</span>
+      <span style="font-size:16px; color:#454545;">&nbsp;/ ${fmt(S.contractTotal)} t&nbsp;</span>
+      <span style="font-size:14px; color:#454545; line-height:16px;">adicionadas</span>
+    </div>
+    ${rem > 0
+      ? `<div style="display:flex;align-items:center;gap:8px;">
+           ${icon('circle-alert', 20, '#a87915')}
+           <span style="font-size:14px;color:#a87915;white-space:nowrap;">Faltam ${fmt(rem)} t para concluir o contrato</span>
+         </div>`
+      : `<div style="display:flex;align-items:center;gap:8px;">
+           ${icon('circle-check', 20, '#3d9442')}
+           <span style="font-size:14px;color:#3d9442;white-space:nowrap;">Volume do contrato preenchido!</span>
+         </div>`
+    }`;
+  lucide.createIcons();
+}
+// ─── MODAL JUSTIFICATIVA ─────────────────────────────────────────
+let _justifyPropId = null;
+
+function justifyTerms(p) {
+  const isAlert = p?.criteria?.socioambiental?.status === 'alert';
+  const count   = parseInt(p?.criteria?.socioambiental?.value) || 0;
+  const one     = count === 1;
+  if (isAlert) {
+    const word = one ? 'alerta' : 'alertas';
+    return { word, title: one ? 'Aceitar alerta' : 'Aceitar alertas', count };
+  } else {
+    const word = one ? 'restrição' : 'restrições';
+    return { word, title: one ? 'Aceitar restrição' : 'Aceitar restrições', count };
+  }
+}
+
+function openJustifyModal(id) {
+  _justifyPropId = id;
+  const p     = S.props.find(x => x.id === id);
+  const terms = justifyTerms(p);
+  // Atualiza título da modal
+  const titleEl = document.getElementById('justify-title');
+  if (titleEl) titleEl.textContent = terms.title;
+  resetJustifyModal(terms);
+  document.getElementById('justify-modal').style.display = 'flex';
+  lucide.createIcons();
+  setTimeout(() => {
+    const ta = document.getElementById('justify-text');
+    if (ta) { ta.value = ''; ta.focus(); }
+    syncJustifyBtn();
+  }, 10);
+}
+function closeJustifyModal() {
+  document.getElementById('justify-modal').style.display = 'none';
+  _justifyPropId = null;
+}
+function syncJustifyBtn() {
+  const ta  = document.getElementById('justify-text');
+  const btn = document.getElementById('justify-confirm');
+  if (!btn || !ta) return;
+  const ok = !!ta.value.trim();
+  btn.disabled      = !ok;
+  btn.style.opacity = ok ? '1' : '0.5';
+  btn.style.cursor  = ok ? 'pointer' : 'not-allowed';
+}
+function confirmJustification() {
+  const ta = document.getElementById('justify-text');
+  const p  = S.props.find(x => x.id === _justifyPropId);
+  if (!p || !ta?.value.trim()) return;
+  p.justification      = ta.value.trim();
+  p.acceptRestrictions = true;
+  closeJustifyModal();
+  render();
+}
+function viewJustification(id) {
+  const p = S.props.find(x => x.id === id); if (!p) return;
+  _justifyPropId = id;
+  const terms = justifyTerms(p);
+  const titleEl = document.getElementById('justify-title');
+  if (titleEl) titleEl.textContent = terms.title;
+
+  // Troca o conteúdo do body para modo leitura
+  document.getElementById('justify-body').innerHTML = `
+    <p style="font-size:14px; color:#454545; line-height:22px; margin:0;">
+      Você aceitou os ${terms.word} deste imóvel para utilizar o saldo no contrato,
+      sob a seguinte justificativa:
+    </p>
+    <div style="background:#f5f5f5; border-radius:12px; padding:16px;">
+      <p style="font-size:14px; color:#454545; line-height:22px; margin:0; white-space:pre-wrap;">${p.justification}</p>
+    </div>
+    <div style="display:flex; justify-content:flex-end;">
+      <button onclick="closeJustifyModal()"
+        style="height:40px; padding:0 20px; background:transparent; border:1px solid #00413c;
+               border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;
+               color:#00413c; font-family:Roboto;">
+        Fechar
+      </button>
+    </div>`;
+
+  document.getElementById('justify-modal').style.display = 'flex';
+  lucide.createIcons();
+}
+
+function resetJustifyModal(terms) {
+  const t = terms || { plural: 'alertas' };
+  document.getElementById('justify-body').innerHTML = `
+    <p style="font-size:14px; color:#454545; line-height:22px; margin:0;">
+      Se você visualizou o resultado da análise socioambiental e está de acordo
+      com os ${t.word} identificados, informe a justificativa abaixo para
+      poder utilizar o saldo deste imóvel na composição do contrato.
+    </p>
+    <div style="border:1px solid #e0e0e0; border-radius:12px; overflow:hidden; transition:border-color 0.15s;"
+         onfocusin="this.style.borderColor='#00413c'" onfocusout="this.style.borderColor='#e0e0e0'">
+      <textarea id="justify-text" placeholder="Justificativa" oninput="syncJustifyBtn()" rows="6"
+        style="width:100%; padding:14px 16px; border:none; outline:none; resize:none;
+               font-size:14px; color:#454545; font-family:Roboto; line-height:1.6;
+               background:white; box-sizing:border-box;"></textarea>
+    </div>
+    <div style="display:flex; justify-content:flex-end; gap:12px;">
+      <button onclick="closeJustifyModal()"
+        style="height:40px; padding:0 20px; background:transparent; border:1px solid #00413c;
+               border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;
+               color:#00413c; font-family:Roboto;">Cancelar</button>
+      <button id="justify-confirm" onclick="confirmJustification()" disabled
+        style="height:40px; padding:0 20px; background:#d4d92e; border:none; border-radius:8px;
+               font-size:14px; font-weight:500; color:#00413c; font-family:Roboto;
+               cursor:not-allowed; opacity:0.5; transition:opacity 0.15s;">Confirmar</button>
+    </div>`;
+}
+function goBack()    { alert('Voltando para etapa anterior...'); }
+function doSave()    { alert('Dados salvos!'); }
+function doAdvance() {
+  if (remaining() > 0) return; // bloqueado
+  alert('Avançando para o Resumo!');
+}
+function updateAdvanceBtn() {
+  const btn     = document.getElementById('btn-advance');
+  const wrap    = btn?.closest('.btn-tooltip-wrap');
+  if (!btn) return;
+  const blocked = remaining() > 0;
+  btn.disabled = blocked;
+  btn.style.opacity = blocked ? '0.5' : '1';
+  btn.style.cursor  = blocked ? 'not-allowed' : 'pointer';
+  // Tooltip só aparece quando bloqueado (via .has-tooltip:hover .tooltip no CSS)
+  if (wrap) wrap.classList.toggle('has-tooltip', blocked);
+}
+
+// ─── ICON HELPER ─────────────────────────────────────────────────
+function icon(name, size, stroke, sw) {
+  sw = sw || 1.5;
+  return `<i data-lucide="${name}" style="width:${size}px;height:${size}px;stroke:${stroke};stroke-width:${sw};display:inline-flex;flex-shrink:0;"></i>`;
+}
+
+// ─── RENDER HELPERS ──────────────────────────────────────────────
+// labels por tipo de critério + status
+const TAG_LABELS = {
+  distance: {
+    ok:           { label: 'Dentro do limite', bg:'#ebf4eb', border:'#c0ddc1', color:'#1f5b21' },
+    alert:        { label: 'Fora do limite',   bg:'#fdf7e8', border:'#f9e5b9', color:'#6d4d09' },
+    insufficient: { label: 'Fora do limite',   bg:'#fcebea', border:'#f4c1be', color:'#991f1a' },
+    conforme:     { label: 'Dentro do limite', bg:'#ebf4eb', border:'#c0ddc1', color:'#1f5b21' },
+  },
+  socioambiental: {
+    ok:           { label: 'Conforme',       bg:'#ebf4eb', border:'#c0ddc1', color:'#1f5b21' },
+    conforme:     { label: 'Conforme',       bg:'#ecf6ed', border:'#c5e2c7', color:'#3d9442' },
+    alert:        { label: 'Com alerta',     bg:'#fdf7e8', border:'#f9e5b9', color:'#6d4d09' },
+    insufficient: { label: 'Com restrição',  bg:'#fcebea', border:'#f4c1be', color:'#991f1a' },
+  },
+  saldo: {
+    ok:           { label: 'Com saldo',  bg:'#ebf4eb', border:'#c0ddc1', color:'#1f5b21' },
+    conforme:     { label: 'Com saldo',  bg:'#ecf6ed', border:'#c5e2c7', color:'#3d9442' },
+    alert:        { label: 'Com saldo',  bg:'#fdf7e8', border:'#f9e5b9', color:'#6d4d09' },
+    insufficient: { label: 'Sem saldo', bg:'#fcebea', border:'#f4c1be', color:'#991f1a' },
+  }
+};
+
+function tagHtml(status, type) {
+  const variants = TAG_LABELS[type] || {};
+  const t = variants[status] || { bg:'#ebf4eb', border:'#c0ddc1', color:'#1f5b21', label: status };
+  return `<div style="background:${t.bg}; border:1px solid ${t.border}; border-radius:4px; padding:0 5px; display:inline-flex; align-items:center;"><span style="font-size:12px; color:${t.color}; line-height:16px;">${t.label}</span></div>`;
+}
+
+function criteriaPanel(c, type, p) {
+  const valColor = { ok:'#3d9442', alert:'#a87915', conforme:'#3d9442', insufficient:'#dc362e' }[c.status] || '#454545';
+
+  // Botão de aceite apenas no painel socioambiental com alerta
+  let acceptBtn = '';
+  if (type === 'socioambiental' && p && c.status === 'alert') {
+    if (p.acceptRestrictions) {
+      // Já aceito → mostrar "Visualizar justificativa"
+      acceptBtn = `
+        <div style="margin-top:auto;">
+          <div style="height:1px; background:#e0e0e0; margin-bottom:8px;"></div>
+          <button onclick="viewJustification(${p.id})"
+            style="display:inline-flex; align-items:center; gap:6px; background:transparent; border:none;
+                   cursor:pointer; padding:0; height:30px; font-size:12px; font-weight:500;
+                   color:#3d9442; font-family:Roboto;">
+            ${icon('file-text', 14, '#3d9442', 1.2)}
+            Visualizar justificativa
+          </button>
+        </div>`;
+    } else {
+      // Ainda não aceito → mostrar "Aceitar alerta"
+      acceptBtn = `
+        <div style="margin-top:auto;">
+          <div style="height:1px; background:#e0e0e0; margin-bottom:8px;"></div>
+          <button onclick="openJustifyModal(${p.id})"
+            style="display:inline-flex; align-items:center; gap:6px; background:transparent; border:none;
+                   cursor:pointer; padding:0; height:30px; font-size:12px; font-weight:500;
+                   color:#3d9442; font-family:Roboto;">
+            ${justifyTerms(p).title}
+          </button>
+        </div>`;
+    }
+  }
+
+  return `
+    <div style="background:rgba(224,224,224,0.3); border-radius:8px; padding:10px 9px; flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; align-self:stretch;">
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span style="font-size:12px; color:#454545; white-space:nowrap;">${c.label}</span>
+        ${tagHtml(c.status, type)}
+        ${c.status === 'insufficient' ? icon('circle-alert', 16, '#dc362e', 1.3) : ''}
+      </div>
+      <span style="font-size:14px; font-weight:500; color:${valColor}; line-height:18px;">${c.value}</span>
+      ${c.detail ? `<span style="font-size:12px; color:#454545; line-height:14px;">${c.detail}</span>` : ''}
+      ${c.total  ? `<span style="font-size:12px; color:#454545; line-height:14px;">${c.total}</span>`  : ''}
+      ${c.hasLink ? `
+        <div style="display:flex; align-items:center; gap:4px; cursor:pointer;">
+          <span style="font-size:12px; color:#176faf; line-height:14px;">Ver detalhes</span>
+          ${icon('arrow-right', 14, '#176faf', 1.3)}
+        </div>` : ''}
+      ${acceptBtn}
+    </div>`;
+}
+
+function disabledVolReason(p) {
+  if (p.status !== 'restricted') return null;
+  if (p.criteria.saldo.status === 'insufficient') {
+    return {
+      title: 'Saldo insuficiente',
+      body: 'O saldo elegível deste imóvel é zero e não permite alocação de volume neste contrato.'
+    };
+  }
+  if (!p.acceptRestrictions) {
+    const isAlert = p.criteria.socioambiental.status === 'alert';
+    return {
+      title: isAlert ? 'Alerta pendente' : 'Restrições pendentes',
+      body: isAlert
+        ? 'O volume só pode ser informado após o resultado da análise socioambiental ser aceito com justificativa.'
+        : 'Para informar o volume, aceite as restrições do imóvel e justifique o aceite.'
+    };
+  }
+  return null;
+}
+
+// Calcula a largura do fill em px para alinhar com a posição real do thumb nativo.
+// O thumb (15px) viaja de left=0 até left=trackW-15, logo o centro vai de 7.5px até trackW-7.5px.
+const TRACK_W   = 118.5;
+const THUMB_R   = 7.5;   // metade de 15px
+const FILL_RANGE = TRACK_W - THUMB_R * 2; // 103.5px — distância efetiva de viagem
+function fillPx(volume, maxVol) {
+  if (maxVol <= 0 || volume <= 0) return 0;
+  return THUMB_R + Math.min(1, volume / maxVol) * FILL_RANGE;
+}
+
+function volumeControl(p) {
+  const enabled = canInput(p);
+  const maxVol  = maxForProp(p);
+  const dis     = !enabled;
+  const reason  = dis ? disabledVolReason(p) : null;
+  const limitMsg = enabled && maxVol < p.criteria.saldo.max && p.volume === 0;
+
+  const tooltipHtml = reason ? `
+    <div class="vol-tooltip">
+      <b>${reason.title}</b>${reason.body}
+    </div>` : '';
+
+  return `
+    <div class="vol-wrap ${dis ? 'vol-disabled' : ''}"
+         style="width:176px; align-self:stretch; flex-shrink:0; position:relative;">
+      ${tooltipHtml}
+      <div style="background:white; border:1px solid #e0e0e0; border-radius:8px; padding:16px; width:176px;
+                  height:100%; display:flex; flex-direction:column; gap:11px; align-items:center;
+                  justify-content:center; ${dis ? 'opacity:0.45;' : ''}">
+
+        <!-- Label -->
+        <span style="font-size:14px; color:#656565; line-height:16px; white-space:nowrap;">Volume utilizado (t)</span>
+
+        <!-- Input row -->
+        <div style="border:1px solid #e1e1e1; border-radius:4px; height:24px; width:122px;
+                    display:flex; align-items:center; justify-content:space-between; overflow:hidden; flex-shrink:0;">
+          <button onclick="${dis ? 'event.preventDefault()' : 'adjustVol('+p.id+',-100)'}"
+            style="width:24px; height:24px; min-width:24px; background:#00413c; border:none; border-radius:3px 0 0 3px;
+                   cursor:${dis ? 'not-allowed' : 'pointer'}; display:flex; align-items:center; justify-content:center;">
+            <svg width="10" height="2" viewBox="0 0 10 2" fill="none"><path d="M1 1h8" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+          <input id="vol-${p.id}" type="number" value="${p.volume}" min="0" max="${maxVol}" ${dis ? 'disabled' : ''}
+            onchange="setVol(${p.id},this.value)" onblur="clampInput(${p.id})"
+            style="flex:1; min-width:0; border:none; outline:none; text-align:center;
+                   font-size:14px; color:#454545; background:transparent; font-family:Roboto; padding:0;">
+          <button onclick="${dis ? 'event.preventDefault()' : 'adjustVol('+p.id+',100)'}"
+            style="width:24px; height:24px; min-width:24px; background:#00413c; border:none; border-radius:0 3px 3px 0;
+                   cursor:${dis ? 'not-allowed' : 'pointer'}; display:flex; align-items:center; justify-content:center;">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M5 1v8M1 5h8" stroke="white" stroke-width="1.8" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <!-- Slider -->
+        <div style="position:relative; width:${TRACK_W}px; height:15px; flex-shrink:0;">
+          <!-- Track cinza de fundo -->
+          <div style="position:absolute; top:4.5px; left:0; width:100%; height:5px;
+                      background:#e0e0e0; border-radius:4px;"></div>
+          <!-- Fill — largura em px alinhada ao centro do thumb -->
+          <div id="fill-${p.id}" style="position:absolute; top:4.5px; left:0; height:5px;
+                      background:#d4d92e; border-radius:4px;
+                      width:${fillPx(p.volume, p.criteria.saldo.max)}px; transition:width 0.1s;"></div>
+          <!-- Range nativo -->
+          <input type="range" min="0" max="${Math.max(p.criteria.saldo.max, 1)}" value="${p.volume}" ${dis ? 'disabled' : ''}
+            oninput="setVol(${p.id},this.value)"
+            style="position:absolute; top:0; left:0; width:100%; height:15px;
+                   -webkit-appearance:none; appearance:none; background:transparent;
+                   margin:0; padding:0; cursor:${dis ? 'not-allowed' : 'pointer'};">
+        </div>
+
+        <!-- Mensagem de limite pelo contrato — dentro do card, abaixo do slider -->
+        <div id="limit-msg-${p.id}"
+             style="align-self:stretch; display:${limitMsg ? 'flex' : 'none'}; align-items:flex-start; gap:5px; margin-top:2px;">
+          ${icon('circle-alert', 12, '#a87915', 1.5)}
+          <span style="font-size:11px; color:#a87915; line-height:15px;">
+            Máx. disponível: <span id="limit-val-${p.id}">${fmt(maxVol)}</span> t — limitado pelo saldo restante do contrato.
+          </span>
+        </div>
+
+      </div>
+    </div>`;
+}
+
+function propertyCard(p) {
+  return `
+    <div style="background:white; border:1px solid #e0e0e0; border-radius:8px;">
+      <div style="padding:16px; display:flex; flex-direction:column; gap:16px;">
+
+        <!-- Nome do imóvel -->
+        <span style="font-size:16px; font-weight:500; color:#454545; line-height:20px; letter-spacing:0.04px;">${p.name}</span>
+
+        <!-- Info row: CAR | Código GS | Município | Produtor -->
+        <div style="display:flex; gap:24px; align-items:flex-start; flex-wrap:wrap;">
+          <div style="flex-shrink:0;">
+            <div style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">CAR</div>
+            <div style="font-size:14px; color:#454545; line-height:16px; white-space:nowrap;">${p.car}</div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Código Grain Station</div>
+            <div style="font-size:14px; color:#454545; line-height:16px;">${p.code}</div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Município</div>
+            <div style="font-size:14px; color:#454545; line-height:16px;">${p.municipio}</div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Produtor</div>
+            <div style="font-size:14px; color:#454545; line-height:16px;">${p.produtor}</div>
+          </div>
+        </div>
+
+        <!-- Critérios + Volume -->
+        <div style="display:flex; align-items:stretch; gap:25px;">
+          <!-- Critérios -->
+          <div style="flex:1; display:flex; gap:24px; align-items:stretch; min-width:0;">
+            ${criteriaPanel(p.criteria.distance,       'distance',       p)}
+            ${criteriaPanel(p.criteria.socioambiental,'socioambiental', p)}
+            ${criteriaPanel(p.criteria.saldo,         'saldo',          p)}
+          </div>
+          <!-- Divisória vertical -->
+          <div style="width:1px; background:#e0e0e0; align-self:stretch; flex-shrink:0;"></div>
+          <!-- Controle de volume -->
+          ${volumeControl(p)}
+        </div>
+
+      </div>
+    </div>`;
+}
+
+// ─── MAIN RENDER ─────────────────────────────────────────────────
+function render() {
+  const tot = totalAdded();
+  const rem = remaining();
+  const p   = pct();
+
+  document.getElementById('page-content').innerHTML = `
+
+    <!-- STEPPER (DS Web) -->
+    <div style="background:white; border:1px solid #e0e0e0; border-radius:8px; height:68px; display:flex; align-items:center; justify-content:center; padding:16px; gap:8px;">
+      <!-- Step 1 — concluído -->
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        <div style="width:36px; height:36px; background:#00413c; border-radius:40px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+          <img src="https://www.figma.com/api/mcp/asset/68192540-ddf1-4ad8-b415-30269a6855a2" width="24" height="24" alt="">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; white-space:nowrap;">
+          <span style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Etapa 1</span>
+          <span style="font-size:14px; color:#454545; line-height:16px;">Dados do contrato</span>
+        </div>
+      </div>
+      <!-- Connector line -->
+      <div style="width:200px; height:1px; background:#e0e0e0; flex-shrink:0;"></div>
+      <!-- Step 2 — ativo -->
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        <div style="width:36px; height:36px; background:#ecf4e9; border-radius:40px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+          <img src="https://www.figma.com/api/mcp/asset/0381685d-4f44-4c94-a863-02ea3198c7ef" width="24" height="24" alt="">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; white-space:nowrap;">
+          <span style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Etapa 2</span>
+          <span style="font-size:14px; font-weight:500; color:#00413c; line-height:18px; letter-spacing:0.014px;">Gerenciar volume</span>
+        </div>
+      </div>
+      <!-- Connector line -->
+      <div style="width:200px; height:1px; background:#e0e0e0; flex-shrink:0;"></div>
+      <!-- Step 3 — futuro -->
+      <div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">
+        <div style="width:36px; height:36px; background:#f5f5f5; border-radius:40px; display:flex; align-items:center; justify-content:center; overflow:hidden; flex-shrink:0;">
+          <img src="https://www.figma.com/api/mcp/asset/0f7fc1e3-0ee5-4a87-87ca-51e8436e4bc9" width="24" height="24" alt="">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:4px; white-space:nowrap;">
+          <span style="font-size:12px; color:#656565; line-height:14px; letter-spacing:0.06px;">Etapa 3</span>
+          <span style="font-size:14px; color:#454545; line-height:16px;">Resumo</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- VOLUME DO CONTRATO -->
+    <div style="background:white; border:1px solid #e1e1e1; border-radius:8px; padding:16px; display:flex; align-items:center; gap:16px;">
+      <!-- Progress -->
+      <div style="flex:1; display:flex; flex-direction:column; gap:8px; min-width:0;">
+        <span style="font-size:14px; font-weight:500; color:#3b3b3b; line-height:18px; letter-spacing:0.014px;">Volume do contrato</span>
+        <div style="height:11px; background:#e0e0e0; border-radius:4px; overflow:hidden;">
+          <div id="vol-bar-fill" style="height:100%; width:${p}%; background:#3d9442; border-radius:4px; transition:width 0.3s ease;"></div>
+        </div>
+      </div>
+      <!-- Divider -->
+      <div style="width:1px; background:#e0e0e0; align-self:stretch; flex-shrink:0;"></div>
+      <!-- Stats -->
+      <div id="vol-stat" style="display:flex; flex-direction:column; gap:8px; align-items:flex-start; flex-shrink:0;">
+        <div style="display:flex; align-items:baseline; gap:0; flex-wrap:wrap;">
+          <span style="font-size:20px; font-weight:500; color:#3d9442; line-height:24px;">${fmt(tot)} t</span>
+          <span style="font-size:16px; color:#454545;">&nbsp;/ ${fmt(S.contractTotal)} t&nbsp;</span>
+          <span style="font-size:14px; color:#454545; line-height:16px;">adicionadas</span>
+        </div>
+        ${rem > 0
+          ? `<div style="display:flex; align-items:center; gap:8px;">
+               ${icon('circle-alert', 20, '#a87915')}
+               <span style="font-size:14px; color:#a87915; line-height:16px; white-space:nowrap;">Faltam ${fmt(rem)} t para concluir o contrato</span>
+             </div>`
+          : `<div style="display:flex; align-items:center; gap:8px;">
+               ${icon('circle-check', 20, '#3d9442')}
+               <span style="font-size:14px; color:#3d9442; line-height:16px; white-space:nowrap;">Volume do contrato preenchido!</span>
+             </div>`
+        }
+      </div>
+    </div>
+
+    <!-- IMÓVEIS SELECIONADOS -->
+    <div style="background:white; border:1px solid #e0e0e0; border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:24px; overflow:hidden;">
+      <!-- Section header -->
+      <div style="display:flex; flex-direction:column; gap:8px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+          <span style="font-size:16px; font-weight:500; color:#454545; line-height:20px; letter-spacing:0.04px;">Imóveis selecionados</span>
+          <button onclick="openRulesModal()" style="display:inline-flex; align-items:center; gap:6px; background:transparent; border:none; cursor:pointer; padding:4px 8px; border-radius:4px; color:#176faf; font-family:Roboto; font-size:14px; line-height:16px; white-space:nowrap; transition:background 0.15s;" onmouseover="this.style.background='#f0f7ff'" onmouseout="this.style.background='transparent'">
+            ${icon('info', 16, '#176faf', 1.3)}
+            Entenda as regras de utilização
+          </button>
+        </div>
+        <span style="font-size:14px; color:#454545; line-height:16px;">Por favor, informe o volume dos imóveis listados abaixo, que será utilizado para a composição deste contrato.</span>
+      </div>
+      <!-- Property cards -->
+      <div style="display:flex; flex-direction:column; gap:16px;">
+        ${S.props.map(p => propertyCard(p)).join('')}
+      </div>
+    </div>
+  `;
+  updateAdvanceBtn();
+  lucide.createIcons();
+}
+
+// ─── CAR MASK & VALIDATION ────────────────────────────────────────
+// Formato: UF(2) - MUNICÍPIO(7) - HASH(32) => total 44 chars com hífens
+function applyCarMask(raw) {
+  // Remove tudo que não for alfanumérico
+  let v = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let out = '';
+  if (v.length > 0)  out += v.substring(0, 2);          // UF
+  if (v.length > 2)  out += '-' + v.substring(2, 9);    // município 7 dígitos
+  if (v.length > 9)  out += '-' + v.substring(9, 41);   // hash 32 chars
+  return out;
+}
+
+function isCarValid(val) {
+  return /^[A-Z]{2}-\d{7}-[A-Z0-9]{32}$/.test(val.trim());
+}
+
+function carValidationMsg(val) {
+  const v = val.trim();
+  if (!v) return '';
+  const raw = v.replace(/-/g, '');
+  if (raw.length < 2)  return '';
+  if (raw.length < 9)  return 'Informe o código do município (7 dígitos)';
+  if (raw.length < 41) return `CAR inválido — faltam ${41 - raw.length} caractere(s) no código`;
+  if (!isCarValid(v))  return 'Formato de CAR inválido';
+  return '';
+}
+
+function openCarSearch() {
+  S.showCarSearch = true;
+  S.carInput = '';
+  S.carError = '';
+  render();
+  setTimeout(() => { const el = document.getElementById('car'); if (el) el.focus(); }, 50);
+}
+function cancelCarSearch() {
+  S.showCarSearch = false;
+  S.carInput = '';
+  S.carError = '';
+  render();
+}
+
+// Atualiza estado sem re-render; aplica máscara e validação ao vivo
+function onCarInput(raw) {
+  const masked = applyCarMask(raw);
+  S.carInput = masked;
+  // Sincroniza o input com o valor mascarado
+  const inputEl = document.getElementById('car');
+  if (inputEl && inputEl.value !== masked) inputEl.value = masked;
+
+  const w = inputEl?.closest('.tf-wrap');
+  const hasVal = !!masked;
+  const err = hasVal ? carValidationMsg(masked) : '';
+  S.carError = err;
+
+  if (w) {
+    w.classList.toggle('tf-filled', hasVal);
+    w.classList.toggle('tf-error', !!err);
+  }
+
+  // Mensagem de erro abaixo do campo
+  const errEl = document.getElementById('car-error-msg');
+  if (errEl) errEl.textContent = err;
+
+  // Botão de pesquisa
+  const btn = document.getElementById('btn-search-car');
+  if (btn) btn.disabled = !isCarValid(masked);
+}
+
+function searchCar() {
+  const v = S.carInput.trim();
+  if (!isCarValid(v)) { document.getElementById('car')?.focus(); return; }
+  const found = CAR_DB[v] || null;
+  openCarResultModal(v, found);
+}
+
+// ─── SIDE DRAWER — CAR RESULT ────────────────────────────────────
+let _pendingCar = '';
+let _leafletMap  = null;
+
+// Polígono simulado centrado em Sorriso-MT (área de fazenda)
+const CAR_POLYGONS = {
+  default: [
+    [-12.530, -55.710], [-12.525, -55.695], [-12.518, -55.698],
+    [-12.515, -55.712], [-12.522, -55.720], [-12.530, -55.710]
+  ]
+};
+
+function drawerLeftHtml(car, found) {
+  if (found) {
+    return `
+      <!-- Banner: encontrado — verde -->
+      <div style="display:flex;align-items:center;gap:8px;background:#ebf4eb;border-radius:4px;padding:16px;flex-shrink:0;">
+        ${icon('circle-check', 24, '#266728')}
+        <span style="font-size:14px;color:#266728;line-height:16px;">Imóvel encontrado na sua carteira</span>
+      </div>
+
+      <!-- Dados do imóvel -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;letter-spacing:0.04px;">Dados do imóvel</span>
+        <div style="background:#f5f5f5;border-radius:5px;padding:16px;display:flex;flex-direction:column;gap:16px;">
+          <!-- Nome -->
+          <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;letter-spacing:0.04px;">${found.name}</span>
+          <!-- CAR -->
+          <span style="font-size:14px;color:#3b3b3b;line-height:20px;word-break:break-all;">${car}</span>
+          <!-- Metadados: Área / Situação / Condição -->
+          <div style="display:flex;gap:31px;align-items:flex-start;">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Área (ha)</span>
+              <span style="font-size:14px;color:#454545;line-height:20px;">243,06</span>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Situação do cadastro</span>
+              <span style="font-size:14px;color:#454545;line-height:20px;">Ativo</span>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Condição do cadastro</span>
+              <span style="font-size:14px;color:#454545;line-height:20px;">Aguardando análise</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pessoas vinculadas -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;letter-spacing:0.04px;">Pessoas vinculadas</span>
+        <div style="background:#f5f5f5;border-radius:5px;padding:16px;">
+          <div style="display:flex;gap:31px;align-items:flex-start;">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Nome</span>
+              <span style="font-size:14px;color:#454545;line-height:20px;">${found.produtor}</span>
+            </div>
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;">
+              <span style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Documento</span>
+              <span style="font-size:14px;color:#454545;line-height:20px;">${found.documento}</span>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  } else {
+    return `
+      <!-- Banner: não encontrado -->
+      <div style="display:flex;align-items:flex-start;gap:8px;background:#fdf7e8;border-radius:4px;padding:16px;flex-shrink:0;">
+        ${icon('circle-alert', 24, '#a87915')}
+        <span style="font-size:14px;color:#a87915;line-height:20px;">Imóvel não cadastrado na sua carteira. Preencha os dados para cadastro</span>
+      </div>
+
+      <!-- Bloco CAR informado -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;letter-spacing:0.04px;">CAR informado</span>
+        <div style="background:#f5f5f5;border-radius:5px;padding:16px;display:flex;flex-direction:column;gap:16px;">
+          <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;word-break:break-all;">${car}</span>
+          <div style="display:flex;gap:31px;align-items:flex-start;">
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Área (ha)</div>
+              <div style="font-size:14px;color:#454545;line-height:20px;">243,06</div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Situação do cadastro</div>
+              <div style="font-size:14px;color:#454545;line-height:20px;">Ativo</div>
+            </div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:12px;color:#656565;line-height:14px;letter-spacing:0.06px;">Condição do cadastro</div>
+              <div style="font-size:14px;color:#454545;line-height:20px;">Aguardando análise</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Formulário complementar -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+        <span style="font-size:16px;font-weight:500;color:#454545;line-height:20px;letter-spacing:0.04px;">Informações complementares para cadastro</span>
+
+        <!-- Nome do imóvel -->
+        <div class="tf-wrap tf-sm" onclick="this.querySelector('input').focus()">
+          <div class="tf-inner">
+            <label class="tf-label" for="np-name">Nome do imóvel *</label>
+            <input id="np-name" type="text" class="tf-input" placeholder=" " oninput="onNewPropInput()">
+          </div>
+        </div>
+
+        <!-- Nome do produtor + CPF/CNPJ -->
+        <div style="display:flex;gap:14px;">
+          <div class="tf-wrap tf-sm" style="flex:1;" onclick="this.querySelector('input').focus()">
+            <div class="tf-inner">
+              <label class="tf-label" for="np-produtor">Nome do produtor *</label>
+              <input id="np-produtor" type="text" class="tf-input" placeholder=" " oninput="onNewPropInput()">
+            </div>
+          </div>
+          <div style="flex:1;display:flex;flex-direction:column;gap:4px;">
+            <div class="tf-wrap tf-sm" onclick="this.querySelector('input').focus()">
+              <div class="tf-inner">
+                <label class="tf-label" for="np-doc">CPF / CNPJ *</label>
+                <input id="np-doc" type="text" class="tf-input" placeholder=" " maxlength="18"
+                  oninput="onDocInput(this)" onblur="validateDoc(this)">
+              </div>
+            </div>
+            <span id="np-doc-err" style="font-size:11px;color:#dc362e;display:none;line-height:14px;">Documento inválido</span>
+          </div>
+        </div>
+      </div>`;
+  }
+}
+
+function openCarResultModal(car, found) {
+  _pendingCar = car;
+  const overlay = document.getElementById('car-drawer-overlay');
+  const drawer  = document.getElementById('car-drawer');
+  const leftCol = document.getElementById('car-drawer-left');
+  if (!overlay || !drawer || !leftCol) return;
+
+  leftCol.innerHTML = drawerLeftHtml(car, found);
+  lucide.createIcons();
+
+  // Footer button + gap da coluna esquerda
+  const btnConfirm = document.getElementById('car-drawer-confirm');
+  const leftCol2   = document.getElementById('car-drawer-left');
+  if (found) {
+    if (btnConfirm) {
+      btnConfirm.textContent = 'Vincular imóvel';
+      btnConfirm.style.opacity = '1';
+      btnConfirm.disabled = false;
+      btnConfirm.onclick = confirmAddProperty;
+    }
+    if (leftCol2) leftCol2.style.gap = '24px';
+  } else {
+    if (btnConfirm) {
+      btnConfirm.textContent = 'Cadastrar e vincular';
+      btnConfirm.style.opacity = '0.5';
+      btnConfirm.disabled = true;
+      btnConfirm.onclick = confirmNewProperty;
+    }
+    if (leftCol2) leftCol2.style.gap = '32px';
+  }
+
+  overlay.classList.add('open');
+  drawer.classList.add('open');
+
+  // Mapa Leaflet
+  const coords = CAR_POLYGONS[car] || CAR_POLYGONS.default;
+  const lat = coords.reduce((s,c) => s + c[0], 0) / coords.length;
+  const lng = coords.reduce((s,c) => s + c[1], 0) / coords.length;
+
+  setTimeout(() => {
+    if (_leafletMap) { _leafletMap.remove(); _leafletMap = null; }
+    const mapEl = document.getElementById('car-map');
+    if (!mapEl) return;
+
+    _leafletMap = L.map('car-map', { zoomControl: true, attributionControl: false }).setView([lat, lng], 14);
+
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19 }
+    ).addTo(_leafletMap);
+
+    L.tileLayer(
+      'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}',
+      { maxZoom: 19, opacity: 0.7 }
+    ).addTo(_leafletMap);
+
+    const poly = L.polygon(coords, {
+      color: '#D4D92E', weight: 3,
+      dashArray: '8 6',
+      fillColor: '#D4D92E', fillOpacity: 0.15
+    }).addTo(_leafletMap);
+
+    _leafletMap.fitBounds(poly.getBounds(), { padding: [40, 40] });
+    _leafletMap.invalidateSize();
+  }, 80);
+}
+
+function closeCarResultModal() {
+  const overlay = document.getElementById('car-drawer-overlay');
+  const drawer  = document.getElementById('car-drawer');
+  drawer?.classList.remove('open');
+  overlay?.classList.remove('open');
+  if (_leafletMap) { setTimeout(() => { if(_leafletMap){_leafletMap.remove(); _leafletMap=null;} }, 350); }
+}
+
+function confirmAddProperty() {
+  // Simula vínculo do imóvel encontrado
+  closeCarResultModal();
+  cancelCarSearch();
+  alert('Imóvel vinculado ao contrato com sucesso!');
+}
+
+// Máscara CPF/CNPJ
+function onDocInput(el) {
+  let v = el.value.replace(/\D/g, '');
+  if (v.length <= 11) {
+    v = v.replace(/(\d{3})(\d)/, '$1.$2')
+         .replace(/(\d{3})(\d)/, '$1.$2')
+         .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
+  } else {
+    v = v.substring(0,14)
+         .replace(/(\d{2})(\d)/, '$1.$2')
+         .replace(/(\d{3})(\d)/, '$1.$2')
+         .replace(/(\d{3})(\d)/, '$1.$2')
+         .replace(/(\d{3})(\d{1,2})$/, '$1/$2')
+         .replace(/(\d{4})(\d{1,2})$/, '$1-$2');
+  }
+  el.value = v;
+  const w = el.closest('.tf-wrap');
+  if (w) w.classList.toggle('tf-filled', !!v);
+  onNewPropInput();
+}
+
+function validateDoc(el) {
+  const raw = el.value.replace(/\D/g, '');
+  const errEl = document.getElementById('np-doc-err');
+  const w = el.closest('.tf-wrap');
+  const invalid = raw.length > 0 && raw.length !== 11 && raw.length !== 14;
+  if (errEl) errEl.style.display = invalid ? 'block' : 'none';
+  if (w) w.classList.toggle('tf-error', invalid);
+  onNewPropInput();
+}
+
+function onNewPropInput() {
+  const name    = document.getElementById('np-name')?.value.trim();
+  const prod    = document.getElementById('np-produtor')?.value.trim();
+  const doc     = document.getElementById('np-doc')?.value.replace(/\D/g,'');
+  const docOk   = doc && (doc.length === 11 || doc.length === 14);
+  // Botão no footer do drawer
+  const btn = document.getElementById('car-drawer-confirm');
+  if (btn) btn.disabled = !(name && prod && docOk);
+  // tf-filled para os campos DS
+  ['np-name','np-produtor','np-doc'].forEach(id => {
+    const inp = document.getElementById(id);
+    if (inp) inp.closest('.tf-wrap')?.classList.toggle('tf-filled', !!inp.value);
+  });
+}
+
+function confirmNewProperty() {
+  const name = document.getElementById('np-name')?.value.trim();
+  const prod = document.getElementById('np-produtor')?.value.trim();
+  const doc  = document.getElementById('np-doc')?.value.trim();
+  if (!name || !prod || !doc) return;
+  closeCarResultModal();
+  cancelCarSearch();
+  alert(`Imóvel "${name}" cadastrado e vinculado ao contrato!`);
+}
+
+function openRulesModal()  { document.getElementById('rules-modal').style.display = 'flex'; }
+function closeRulesModal() { document.getElementById('rules-modal').style.display = 'none'; }
+
+// Fecha modais com Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { closeRulesModal(); closeCarResultModal(); closeJustifyModal(); }
+});
+
+// Init
+render();
+</script>
+<!-- ═══════════════════════════════════════════════════════════════
+     MODAL — Justificativa de aceite (centralizada)
+════════════════════════════════════════════════════════════════ -->
+<div id="justify-modal"
+  onclick="if(event.target===this) closeJustifyModal()"
+  style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:400;
+         align-items:center; justify-content:center;">
+
+  <div style="background:white; border-radius:16px; width:560px; max-width:92vw;
+              display:flex; flex-direction:column; gap:0;
+              box-shadow:0 8px 40px rgba(0,0,0,0.22); overflow:hidden;">
+
+    <!-- Header -->
+    <div style="padding:24px 24px 20px; display:flex; align-items:flex-start; gap:14px;">
+      <!-- Ícone triângulo alerta amarelo -->
+      <i data-lucide="triangle-alert" style="width:28px;height:28px;stroke:#d4a017;stroke-width:1.5;flex-shrink:0;margin-top:1px;"></i>
+      <div>
+        <div id="justify-title" style="font-size:18px; font-weight:600; color:#1e4841; line-height:24px; margin-bottom:2px;">
+          Aceitar alerta
+        </div>
+      </div>
+    </div>
+
+    <!-- Body — conteúdo dinâmico (edição ou leitura) -->
+    <div id="justify-body" style="padding:0 24px 24px; display:flex; flex-direction:column; gap:20px;">
+      <!-- preenchido via resetJustifyModal() ou viewJustification() -->
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MODAL — Regras de utilização
+════════════════════════════════════════════════════════════════ -->
+<div id="rules-modal"
+  onclick="if(event.target===this) closeRulesModal()"
+  style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:200;
+         align-items:center; justify-content:center;">
+
+  <div style="background:white; border-radius:12px; width:560px; max-width:90vw; max-height:85vh;
+              display:flex; flex-direction:column; box-shadow:0 8px 32px rgba(0,0,0,0.18); overflow:hidden;">
+
+    <!-- Header -->
+    <div style="display:flex; align-items:center; justify-content:space-between;
+                padding:20px 24px 16px; border-bottom:1px solid #e0e0e0; flex-shrink:0;">
+      <div style="display:flex; align-items:center; gap:10px;">
+        <i data-lucide="info" style="width:20px;height:20px;stroke:#176faf;stroke-width:1.5;flex-shrink:0;"></i>
+        <span style="font-size:16px; font-weight:500; color:#1e4841; line-height:20px; letter-spacing:0.04px;">
+          Regras de utilização de volume
+        </span>
+      </div>
+      <button onclick="closeRulesModal()"
+        style="width:32px; height:32px; background:transparent; border:none; cursor:pointer; border-radius:6px;
+               display:flex; align-items:center; justify-content:center; color:#656565; transition:background 0.15s;"
+        onmouseover="this.style.background='#f5f5f5'" onmouseout="this.style.background='transparent'">
+        <i data-lucide="x" style="width:18px;height:18px;stroke:#656565;stroke-width:1.8;flex-shrink:0;"></i>
+      </button>
+    </div>
+
+    <!-- Body (scrollável) -->
+    <div style="padding:24px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Placeholder — conteúdo a ser definido -->
+      <div style="display:flex; flex-direction:column; align-items:center; gap:12px; padding:32px 0; color:#9e9e9e; text-align:center;">
+        <i data-lucide="info" style="width:48px;height:48px;stroke:#bdbdbd;stroke-width:1.2;flex-shrink:0;"></i>
+        <span style="font-size:14px; color:#9e9e9e; line-height:20px;">
+          As regras de utilização serão definidas em breve.
+        </span>
+      </div>
+
+    </div>
+
+    <!-- Footer -->
+    <div style="padding:16px 24px; border-top:1px solid #e0e0e0; display:flex; justify-content:flex-end; flex-shrink:0;">
+      <button onclick="closeRulesModal()"
+        style="height:40px; padding:0 24px; background:#d4d92e; border:none; border-radius:8px;
+               cursor:pointer; font-size:14px; font-weight:500; color:#00413c; font-family:Roboto;">
+        Entendido
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     DRAWER — Resultado da busca por CAR (slide from right)
+════════════════════════════════════════════════════════════════ -->
+<!-- Overlay backdrop -->
+<div id="car-drawer-overlay" onclick="closeCarResultModal()"></div>
+
+<!-- Drawer panel -->
+<div id="car-drawer">
+
+  <!-- Scroll wrapper — todo o conteúdo interno rola junto -->
+  <div style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0;">
+
+    <!-- Conteúdo principal com scroll -->
+    <div style="flex:1; overflow-y:auto; padding:16px 24px 0 16px; display:flex; flex-direction:column; gap:16px;">
+
+      <!-- Header: título + fechar (sem divider) -->
+      <div style="display:flex; align-items:center; justify-content:space-between; flex-shrink:0;">
+        <span style="font-size:20px; font-weight:500; color:#454545; line-height:24px;">Resultado da busca por CAR</span>
+        <button onclick="closeCarResultModal()"
+          style="width:24px; height:24px; background:transparent; border:none; cursor:pointer;
+                 display:flex; align-items:center; justify-content:center; flex-shrink:0; padding:0;"
+          onmouseover="this.style.opacity='0.6'" onmouseout="this.style.opacity='1'">
+          <i data-lucide="x" style="width:18px;height:18px;stroke:#454545;stroke-width:1.8;flex-shrink:0;"></i>
+        </button>
+      </div>
+
+      <!-- Corpo em duas colunas: esquerda (dados/form) + direita (mapa) -->
+      <div style="flex:1; display:flex; gap:16px; min-height:480px;">
+
+        <!-- Coluna esquerda -->
+        <div id="car-drawer-left"
+          style="flex:1; min-width:0; display:flex; flex-direction:column; gap:32px; overflow-y:auto;">
+          <!-- preenchido via JS -->
+        </div>
+
+        <!-- Coluna direita — mapa arredondado, sem borda -->
+        <div style="flex:1; min-width:0; border-radius:5px; overflow:hidden; position:relative; background:#dde2e8;">
+          <div id="car-map" style="width:100%; height:100%; min-height:400px;"></div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Footer: sem divider, padding conforme Figma -->
+    <div style="padding:16px 24px 16px 16px; display:flex;
+                justify-content:space-between; align-items:center; flex-shrink:0;">
+      <button onclick="closeCarResultModal()"
+        style="height:40px; padding:0 16px; background:transparent; border:1px solid #00413c;
+               border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;
+               color:#00413c; font-family:Roboto; letter-spacing:0.014px;">
+        Cancelar
+      </button>
+      <button id="car-drawer-confirm"
+        style="height:40px; padding:0 16px; background:#3d9442; border:none;
+               border-radius:8px; cursor:pointer; font-size:14px; font-weight:500;
+               color:white; font-family:Roboto; letter-spacing:0.014px;">
+        Vincular imóvel
+      </button>
+    </div>
+
+  </div>
+</div>
+
+</body>
+</html>
